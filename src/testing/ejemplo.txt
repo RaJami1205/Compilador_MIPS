@@ -2,8 +2,8 @@ let string x = "hola"$
 
 procedure principalєэ ¿ 
     let int y = 10$
-    outputє"x"э$
-    outputє"y"э$
+    outputєxэ$
+    outputєyэ$
 ? 
 
 int suma єэ  ¿

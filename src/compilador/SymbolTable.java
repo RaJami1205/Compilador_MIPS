@@ -18,7 +18,7 @@ public class SymbolTable {
     }
 
     public void exitScope() {
-        /*if (!scopes.isEmpty()) {
+       /*  if (!scopes.isEmpty()) {
             System.out.println("[ST] exitScope -> saliendo nivel " + currentScope);
             scopes.remove(scopes.size() - 1);
             currentScope = scopes.size() - 1;

@@ -44,7 +44,7 @@
       "args": [
         "-cp", "'bin;lib/*'",
         "Compilador.TestParser",
-        "src/testing/ejemplo.txt"
+        "src/testing/ejemplo4.txt"
       ],
       "group": "test",
       "dependsOn": ["Generar Lexer", "Generar Parser", "Compilar Java"]

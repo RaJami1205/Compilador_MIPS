@@ -2,4 +2,5 @@
 bin/
 lib/
 src/ParserLexer/
+src/Codigo_Intermedio/
 src/MIPS/

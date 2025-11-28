@@ -66,6 +66,13 @@ public class TestParser {
                 Parser.codigoIntermedio.printCode();
             }
 
+            System.out.println("-------------------------------------");
+            
+            System.out.println("\n--- GENERACIÓN DE CÓDIGO MIPS ---");
+            MIPSCodeGenerator gen = new MIPSCodeGenerator(Parser.codigoIntermedio, Parser.tablaSimbolos);
+            gen.generate("src/MIPS/objectCode.asm");
+            System.out.println("-------------------------------------");
+
         } catch (Exception e) {
             System.out.println("\nError fatal durante el análisis. El archivo no puede ser generado:");
             e.printStackTrace();

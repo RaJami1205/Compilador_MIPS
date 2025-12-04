@@ -18,14 +18,14 @@ public class SymbolTable {
     }
 
     public void exitScope() {
-       /*  if (!scopes.isEmpty()) {
+        if (!scopes.isEmpty()) {
             System.out.println("[ST] exitScope -> saliendo nivel " + currentScope);
             scopes.remove(scopes.size() - 1);
             currentScope = scopes.size() - 1;
             System.out.println("[ST] now currentScope = " + currentScope);
         } else {
             currentScope = -1;
-        }*/
+        }
     }
 
     public boolean addSymbol(String name, String type, String category, Object value) {

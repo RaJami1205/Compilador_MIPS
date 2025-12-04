@@ -1,0 +1,14 @@
+let string x = "hola"$
+
+procedure principalєэ ¿ 
+    let int y = 10$
+    outputєxэ$
+    outputєyэ$
+? 
+
+int suma єэ  ¿
+    let int a = 5$
+    let int b = 10$
+    let int resultado = a + b$
+    return resultado$
+?

@@ -229,7 +229,7 @@ param_formales_opt ::= /* vacío */ | lista_params ;
 
 lista_params ::= lista_params COMMA param | param;
 
-param ::= IDENTIFIER:id COLON tipo:tipoParam
+param ::= tipo:tipoParam IDENTIFIER:id 
         {:
             if(!tablaSimbolos.addSymbol((String)id,(String)tipoParam,"param",null))
             {
@@ -403,7 +403,7 @@ init_opt ::=
 init_arr_opt ::=   /*vacio*/ | ASSIGN lit_arreglo;
  
 
-asignacion ::= lvalue:id ASSIGN expr:valor 
+asignacion ::= IDENTIFIER:id ASSIGN expr:valor 
     {:
         String dest = (String) id;
         String src = (String) valor;
@@ -778,12 +778,12 @@ cond_bool ::=
 /* ===================== LITERALES ===================== */
 
 lit ::=
-      INTEGER_LITERAL:val     {: RESULT = val; :}
-    | FLOAT_LITERAL:val       {: RESULT = val; :}
-    | TRUE                    {: RESULT = true; :}
-    | FALSE                   {: RESULT = false; :}
-    | CHAR_LITERAL:val        {: RESULT = "'" + val + "'"; :} 
-    | STRING_LITERAL:val      {: RESULT = "'" + val + "'"; :} 
+      INTEGER_LITERAL:val     {: RESULT = val.toString(); :}
+    | FLOAT_LITERAL:val       {: RESULT = val.toString(); :}
+    | TRUE                    {: RESULT = "true"; :}
+    | FALSE                   {: RESULT = "false"; :}
+    | CHAR_LITERAL:val        {: RESULT = "'" + val + "'"; :}
+    | STRING_LITERAL:val      {: RESULT = "'" + val + "'"; :}
     | lit_arreglo:val         {: RESULT = val; :}
     ;
 

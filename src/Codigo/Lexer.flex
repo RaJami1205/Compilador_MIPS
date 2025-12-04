@@ -91,11 +91,11 @@ Identifier = [_]*[a-zA-Z][a-zA-Z0-9_]*
     "--"               { return symbol(sym.DECREMENT); }
     
     /* Símbolos especiales */
-    "є"                { return symbol(sym.OPEN_PAREN); }
+    "є"                { return symbol(sym.OPEN_PAREN); } 
     "э"                { return symbol(sym.CLOSE_PAREN); }
-    "¿"                { return symbol(sym.OPEN_BRACE); }
+    "¿"                { return symbol(sym.OPEN_BRACE); } 
     "?"                { return symbol(sym.CLOSE_BRACE); }
-    "["                { return symbol(sym.OPEN_BRACKET); }
+    "["                { return symbol(sym.OPEN_BRACKET); } 
     "]"                { return symbol(sym.CLOSE_BRACKET); }
     ":"                { return symbol(sym.COLON); }
     ","                { return symbol(sym.COMMA); }

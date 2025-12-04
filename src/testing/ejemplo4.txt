@@ -1,9 +1,16 @@
-let int numero = 5$
+let int numero$
+
 let char letra = 'A'$
 
 procedure principalєэ ¿
-    let char letra = 'A'$
+    let char letra$
+    letra = 'c'$
     let char letra = 'A'$
     outputє"El número es:"э$
     outputєnumeroэ$
+?
+
+bool funcion єэ ¿
+    let char michar$
+    michar = 'c'$
 ?

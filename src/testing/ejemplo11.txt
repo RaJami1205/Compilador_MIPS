@@ -1,0 +1,9 @@
+let int numero = 5 $
+let int doble = numero * 2 $
+
+procedure principal єэ ¿
+    output є "Numero: " э $
+    output є numero $
+    output є "Doble: " э $
+    output є doble $
+?

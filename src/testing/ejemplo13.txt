@@ -1,0 +1,9 @@
+let int edad = 25 $
+
+procedure principal єэ ¿
+    decide of є edad >= 18 э -> ¿
+        output є "Eres mayor de edad" э $
+    ? else -> ¿
+        output є "Eres menor de edad" э $
+    ? end decide $
+?

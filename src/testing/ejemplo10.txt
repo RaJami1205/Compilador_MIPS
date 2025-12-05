@@ -1,0 +1,11 @@
+let int contador = 0 $
+
+procedure principal єэ ¿
+    loop
+        output є "Iteración: " э $
+        let int contador = contador + 1 $
+        exit when є contador > 3 э $
+    end loop $
+    
+    output є "Fin del loop" э $
+?

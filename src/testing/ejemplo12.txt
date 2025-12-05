@@ -1,0 +1,11 @@
+let char letra = 'A' $
+
+procedure principal єэ ¿
+    output є "Carácter: " э $
+    output є letra $
+    decide of є letra = 'A' э -> ¿
+        output є "Primera letra" э $
+    ? else -> ¿
+        output є "Otra letra" э $
+    ? end decide $
+?

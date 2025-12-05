@@ -1,10 +1,11 @@
  
- string _s1_$ | sintactico
+let string _s1_$ 
 let bool _b1_$
 
- float func1 є char x22,char x22 э  ¿ |semantico borrar parametro
+ float func1 є char x22,char x22 э  ¿ 
 
-	let int numero$ let char letra$
+	let int numero$ 
+	let char letra$
 	numero = 10$
 	letra = 'a'$
 	output є numero э $
@@ -12,64 +13,56 @@ let bool _b1_$
 	let int numS = numero - 1 * numero + numero $
 	output є numS э $
 
-	let float=-0.01$ |error sintactico
-	let char _x22_='a'$ ¡semantico x22!
-	let char _miChar_='!'  |error sintactico
-	let char _miChar2_='!!'$ |sintactico-semantico
+	let float miFloat=-0.01$ 
+	let char _x22_='a'$ 
+	let char _miChar_='!'$  
+	let char _miChar2_='!'$ 
 	let int _x30_=-1$
 	let bool _x40_=false$
-	let char _x50_[1000] = ¿4,5?$
+	let char _x50_ = ¿4,5?$
 	let string _x50_="Hola a todos los que est[a] haciendo un compilador nuevo¿n"$
 	decide of
-	є x22<=45 @ var>5.6 э ->  ¿  |semantico x22, var
+	є x22<=45 @ var>5.6 э ->  ¿  
 		let int y$
-		x22=10$
+		x22='a'$
 		let char ch33='a'$
 	 ? 
-	є x24>=var>5.6 э ->  ¿ |sintactico
-		let int y$
-		x22=10$
-		let char ch33='a'$
-	? 
 	else -> ¿ 
-		let int y$ |no error duplicado en if-else
+		let int y$ 
 		let string str2="sdff"$
 	 ?
 	end decide$ 
-	for   _i_=0 step 1 to 10 do  ¿ output є _i_ э $ ?  |semantico i y j puede dar error sintactico
+	for int _i_=0 step 1 to 10 do  ¿ output є _i_ э $ ?  
 	output є "Hola mundo" э $
 	input є _x22_ э $
-	return -5.6$|cambio en retorno genera semantico
+	return -5.6$
  ?  
 
  bool _func2_  є bool _b1_, int _i1_ э   ¿ 
-	let int $ |sintactico
-	return$ |generar error con -5.6 y con i1
+	let int _x30_$
+	return$ 
   ?  
 
-string _func3_  є  э   ¿  |semantico string
+string _func3_  є  э   ¿  
 	let string _b1_$
 	return _b1_$ 
   ? 
 
-void principal є int args  э  ¿ 
-¡
-Comentario 1
-!
+procedure principal єэ  ¿ 
+
 	let char miChar='!'$
-	let char miChar2='!!'$ |sintactico
+	let char miChar2='!'$ 
 	let string str1="Mi string 1"$
 	let float fl1$
-	let float fl1=56.6$ |semantico fl1
-	let int in1=fl1--- -14%in1 +++ 7 / 15$ |semantico fl1, in1, semantico division
-	let float fl2=3.7 ^ fl1+ є 45.6 % 76 э $ |semantico literal 76
-	
-|comentario 2
-	arr = 10 - arr[67+i] * func1  є hola, true, "hola mundo", 4.5, 'a' э $ |semantico func1, retorno func1
-	fl1 = 4.5%miChar^-0.005$ |semantico miChar
-	miFunc є miFunc є  э ,'a' э $ |semantico miFunc, hola
-	let bool bl0 = 6.7 != 8.9$ |ok
-	bl0 = true != false$ |ok
-	let bool bl1 = in1 >= fl1 ~ false @ Σ є func2 є 3,in1 э  > 56 э $ |semantico in1 >= fl1, func2
-	return   bl1$ |semantico
+	let float fl1=56.6$ 
+	let int in1=fl1 - 14%in1 + 7 / 15$ 
+	let float fl2=3.7 + fl1+ 45.6 % 76 $ 
+
+	|arr = 10 - arr[67+i] * func1  є hola, true, "hola mundo", 4.5, 'a' э $
+	fl1 = 4.5 % miChar - 0.005$ 
+	miFunc є miFunc є  э ,'a' э $ 
+	let bool bl0 = 6.7 != 8.9$ 
+	bl0 = true != false$ 
+	let bool bl1 = in1 >= fl1 ~ false @ Σ є func2 є 3,in1 э  > 56 э $ 
+	return   bl1$ 
  ? 

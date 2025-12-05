@@ -50,7 +50,7 @@ parser code {:
         System.err.println("Error no recuperable: " + value);
     }
 
-    private String inferTypeOfOperand(String op) {
+    public String inferTypeOfOperand(String op) {
         if (op == null) return "int";
 
         op = op.trim();
@@ -89,7 +89,29 @@ parser code {:
         return "int";
     }
 
-    private MySymbol createTempFor(String type) {
+    public String inferTypeOfOperands(String o1, String o2) {
+        String t1 = inferTypeOfOperand(o1);
+        String t2 = inferTypeOfOperand(o2);
+
+        // Si alguno es nulo, devolver int por defecto
+        if (t1 == null) t1 = "int";
+        if (t2 == null) t2 = "int";
+
+        // Si ambos iguales → listo
+        if (t1.equals(t2)) return t1;
+
+        // Reglas numéricas
+        if ((t1.equals("float") && t2.equals("int")) ||
+            (t1.equals("int") && t2.equals("float"))) {
+            return "float";
+        }
+
+        // Operaciones entre tipos no numéricos NO válidas
+        // ej: char + string, bool + int, etc.
+        return "int"; 
+    }
+
+    public MySymbol createTempFor(String type) {
         String t = GenerateTemp.newTemp();
         // guardar en tabla (en alcance actual)
         tablaSimbolos.addSymbol(t, type, "temp", null);
@@ -101,28 +123,28 @@ parser code {:
         return tempSym;
     }
 
-    private boolean tiposCompatibles(String tipoDestino, String tipoFuente) {
-    if (tipoDestino == null || tipoFuente == null) return true; // evitar errores en nulos
+    public boolean tiposCompatibles(String tipoDestino, String tipoFuente) {
+        if (tipoDestino == null || tipoFuente == null) return true; // evitar errores en nulos
 
-    tipoDestino = tipoDestino.toLowerCase();
-    tipoFuente = tipoFuente.toLowerCase();
+        tipoDestino = tipoDestino.toLowerCase();
+        tipoFuente = tipoFuente.toLowerCase();
 
-    // Mismos tipos siempre compatibles
-    if (tipoDestino.equals(tipoFuente)) return true;
+        // Mismos tipos siempre compatibles
+        if (tipoDestino.equals(tipoFuente)) return true;
 
-    // Compatibilidades numéricas 
-    if ((tipoDestino.equals("float") && tipoFuente.equals("int")) ||
-        (tipoDestino.equals("int") && tipoFuente.equals("float"))) {
-        return true;
+        // Compatibilidades numéricas 
+        if ((tipoDestino.equals("float") && tipoFuente.equals("int")) ||
+            (tipoDestino.equals("int") && tipoFuente.equals("float"))) {
+            return true;
+        }
+
+        // No se permiten asignaciones de bool, char o string a int o float
+        if (tipoDestino.equals("bool") || tipoDestino.equals("char") || tipoDestino.equals("string"))
+            return tipoDestino.equals(tipoFuente);
+
+        // Si nada coincide
+        return false;
     }
-
-    // No se permiten asignaciones de bool, char o string a int o float
-    if (tipoDestino.equals("bool") || tipoDestino.equals("char") || tipoDestino.equals("string"))
-        return tipoDestino.equals(tipoFuente);
-
-    // Si nada coincide
-    return false;
-}
 :}
 
 init with {: :};
@@ -657,31 +679,75 @@ lista_out ::=
 
 expr ::= expr_log_or:val {: RESULT = val; :};
 
-expr_log_or ::= expr_log_or OR expr_log_and
-              {: RESULT = true; :} 
-              | expr_log_and:val {: RESULT = val; :}
-              ;
+expr_log_or ::=
+      expr_log_or:e1 OR expr_log_and:e2
+      {: 
+         MySymbol tmp = createTempFor("bool");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("OR", (String)e1, (String)e2, t);
+         RESULT = t; 
+      :}
+    | expr_log_and:e
+      {: RESULT = e; :}
+    ;
 
-expr_log_and ::= expr_log_and AND expr_rel
-               {: RESULT = true; :}
-               | expr_rel:val {: RESULT = val; :}
-               ;
+expr_log_and ::=
+      expr_log_and:e1 AND expr_rel:e2
+      {: 
+         MySymbol tmp = createTempFor("bool");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("AND", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_rel:e
+      {: RESULT = e; :}
+    ;
 
 expr_rel ::=
-      expr_aditiva:val1 op_rel:op expr_aditiva:val2
+      expr_rel:e1 EQ expr_aditiva:e2
       {:
-          String op1 = (String) val1;
-          String op2 = (String) val2;
-          String oprel = (String) op;
-
-          // crear temporal booleano
-          MySymbol tmp = createTempFor("bool");
-          String t = tmp.getAddress();
-
-          codigoIntermedio.add(oprel, op1, op2, t);
-          RESULT = t;
+         MySymbol tmp = createTempFor("bool");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("==", (String)e1, (String)e2, t);
+         RESULT = t;
       :}
-    | expr_aditiva:val {: RESULT = val; :}
+    | expr_rel:e1 NE expr_aditiva:e2
+      {:
+         MySymbol tmp = createTempFor("bool");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("!=", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_rel:e1 GT expr_aditiva:e2
+      {:
+         MySymbol tmp = createTempFor("bool");
+         String t = tmp.getAddress();
+         codigoIntermedio.add(">", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_rel:e1 LT expr_aditiva:e2
+      {:
+         MySymbol tmp = createTempFor("bool");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("<", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_rel:e1 GE expr_aditiva:e2
+      {:
+         MySymbol tmp = createTempFor("bool");
+         String t = tmp.getAddress();
+         codigoIntermedio.add(">=", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_rel:e1 LE expr_aditiva:e2
+      {:
+         MySymbol tmp = createTempFor("bool");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("<=", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_aditiva:e
+      {: RESULT = e; :}
     ;
 
 op_rel ::= 
@@ -695,46 +761,88 @@ op_rel ::=
 
 expr_aditiva ::=
       expr_aditiva:e1 PLUS expr_mult:e2
-        {:
-            String op1 = (String) e1;
-            String op2 = (String) e2;
-            // inferir tipo para el temporal
-            String tipo = inferTypeOfOperand(op1);
-            if (tipo.equals("int") == false) tipo = inferTypeOfOperand(op2); 
-            MySymbol tmpSym = createTempFor(tipo);
-            String tname = tmpSym.getAddress();
-            codigoIntermedio.add("+", op1, op2, tname);
-            RESULT = tname;
-        :}
+      {:
+         MySymbol tmp = createTempFor(inferTypeOfOperands((String)e1,(String)e2));
+         String t = tmp.getAddress();
+         codigoIntermedio.add("+", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
     | expr_aditiva:e1 MINUS expr_mult:e2
-        {:
-            String op1 = (String) e1;
-            String op2 = (String) e2;
-            String tipo = inferTypeOfOperand(op1);
-            MySymbol tmpSym = createTempFor(tipo);
-            String tname = tmpSym.getAddress();
-            codigoIntermedio.add("-", op1, op2, tname);
-            RESULT = tname;
-        :}
-    | expr_mult:val {: RESULT = val; :}
+      {:
+         MySymbol tmp = createTempFor(inferTypeOfOperands((String)e1,(String)e2));
+         String t = tmp.getAddress();
+         codigoIntermedio.add("-", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_mult:e
+      {: RESULT = e; :}
     ;
 
-expr_mult ::= expr_mult MULT expr_pot
-            {: RESULT = null; :}
-            | expr_mult DIV expr_pot
-            {: RESULT = null; :}
-            | expr_mult INT_DIV expr_pot
-            {: RESULT = null; :}
-            | expr_mult MOD expr_pot
-            {: RESULT = null; :}
-            | expr_pot:val {: RESULT = val; :}
-            ;
+expr_mult ::=
+      expr_mult:e1 MULT expr_pot:e2
+      {:
+         MySymbol tmp = createTempFor(inferTypeOfOperands((String)e1,(String)e2));
+         String t = tmp.getAddress();
+         codigoIntermedio.add("*", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_mult:e1 DIV expr_pot:e2
+      {:
+         MySymbol tmp = createTempFor("float");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("/", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_mult:e1 INT_DIV expr_pot:e2
+      {:
+         MySymbol tmp = createTempFor("integer");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("//", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_mult:e1 MOD expr_pot:e2
+      {:
+         MySymbol tmp = createTempFor("integer");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("%", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_pot:e
+      {: RESULT = e; :}
+    ;
 
-expr_pot ::= expr_unaria:val {: RESULT = val; :};
+expr_pot ::=
+      expr_unaria:e1 POW expr_unaria:e2
+      {:
+         MySymbol tmp = createTempFor("float");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("POW", (String)e1, (String)e2, t);
+         RESULT = t;
+      :}
+    | expr_unaria:e
+      {: RESULT = e; :}
+    ;
 
-expr_unaria ::= op_unario expr_unaria {: RESULT = null; :}
-              | expr_postfijo:val {: RESULT = val; :}
-              ;
+expr_unaria ::=
+      SIGMA expr_unaria:e
+      {:
+         MySymbol tmp = createTempFor("bool");
+         String t = tmp.getAddress();
+         codigoIntermedio.add("SIGMA", (String)e, null, t);
+         RESULT = t;
+      :}
+    | MINUS expr_unaria:e
+      {:
+         MySymbol tmp = createTempFor(inferTypeOfOperand((String)e));
+         String t = tmp.getAddress();
+         codigoIntermedio.add("NEG", (String)e, null, t);
+         RESULT = t;
+      :}
+    | PLUS expr_unaria:e
+      {: RESULT = e; :}
+    | expr_postfijo:e
+      {: RESULT = e; :}
+    ;
 
 op_unario ::= SIGMA | MINUS;
 

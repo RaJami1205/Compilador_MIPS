@@ -4,11 +4,15 @@ procedure principalєэ ¿
     let int y = 10$
     outputєxэ$
     outputєyэ$
+    let int c = 5$
+    let int d = 10$
+    let int resultado = c + d$
+    outputєresultadoэ$
 ? 
 
 int suma єэ  ¿
-    let int a = 5$
-    let int b = 10$
-    let int resultado = a + b$
+    let int c = 5$
+    let int d = 10$
+    let int resultado = c + d$
     return resultado$
 ?

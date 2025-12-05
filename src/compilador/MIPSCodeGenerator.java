@@ -438,11 +438,19 @@ public class MIPSCodeGenerator {
     }
 
     private boolean isStringLiteral(String s) {
-        return s != null && s.startsWith("'") && s.endsWith("'");
+        if (s == null) return false;
+        s = s.trim();
+        return (s.startsWith("'") && s.endsWith("'"))
+            || (s.startsWith("\"") && s.endsWith("\""));
     }
 
     private String getLiteralLabel(String literal) {
-        String clean = literal.substring(1, literal.length() - 1);
+        String clean = literal.trim();
+
+        if ((clean.startsWith("'") && clean.endsWith("'")) ||
+            (clean.startsWith("\"") && clean.endsWith("\""))) {
+            clean = clean.substring(1, clean.length() - 1); // quita comillas
+        }
 
         if (literalStrings.containsKey(clean)) return literalStrings.get(clean);
 

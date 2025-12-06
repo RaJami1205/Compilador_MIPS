@@ -1,5 +1,5 @@
  
-let string _s1_$ 
+let string _s1_$
 let bool _b1_$
 
  float func1 є char x22,char x22 э  ¿ 

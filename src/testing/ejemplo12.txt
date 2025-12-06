@@ -3,7 +3,7 @@ let char letra = 'A' $
 procedure principal єэ ¿
     output є "Carácter: " э $
     output є letra э $
-    decide of є letra = 'A' э -> ¿
+    decide of є letra == 'A' э -> ¿
         output є "Primera letra" э $
     ? else -> ¿
         output є "Otra letra" э $

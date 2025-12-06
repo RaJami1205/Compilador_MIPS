@@ -4,17 +4,93 @@ import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.*;
 
+/**
+ * MIPSCodeGenerator - Generador de código MIPS a partir de cuádruplos (IntermediateCode).
+ *
+ * Correcciones principales:
+ * - loadToT1 corregido (usaba $t0 por error).
+ * - emitPrint: diferencia correctamente char vs string vs entero.
+ * - emitAssign: guarda char como valor ASCII (li) y string como dirección (la).
+ * - emitRelational: maneja correctamente literales char y variables char.
+ * - Safe naming y recolección de literales/identificadores.
+ */
 public class MIPSCodeGenerator {
     private IntermediateCode icode;
     private SymbolTable symtab;
     private PrintWriter out;
-    private List<Quadruple> quads;
+    private List<Quadruple> quads = new ArrayList<>();
 
-    // Para manejar los strings literales
-    private Map<String, String> literalStrings = new LinkedHashMap<>();
+    // Literales string detectadas y su etiqueta _strN
+    private Map<String,String> literalStrings = new LinkedHashMap<>();
     private int literalCounter = 0;
+
+    // Tipos del lenguaje: no deben acabar en .data
+    private static final Set<String> TYPE_NAMES = new HashSet<>(Arrays.asList(
+            "int","float","char","string","bool"
+    ));
+
+    // Reservadas MIPS (si coincide exactamente con el id -> renombrar)
+    private static final Set<String> MIPS_RESERVED = new HashSet<>(Arrays.asList(
+            "beq","bne","blt","ble","bgt","bge","j","jr","jal",
+            "lw","sw","la","li","add","addi","sub","mul","div","mfhi","mflo","syscall"
+    ));
+
+    public MIPSCodeGenerator(IntermediateCode icode, SymbolTable symtab) {
+        this.icode = icode;
+        this.symtab = symtab;
+        this.quads = obtainQuads(icode);
+    }
+
+    /** Public: genera el archivo .asm */
+    public void generate(String outPath) throws IOException {
+        out = new PrintWriter(new FileWriter(outPath));
+        emitHeader();
+        preScanForLiterals();
+        emitDataSegment();
+        emitTextSegment();
+        out.close();
+    }
+
+    private void emitHeader() {
+        out.println("# CODIGO MIPS generado por MIPSCodeGenerator");
+        out.println();
+    }
+
+    /* ===================== helpers literales ===================== */
+    private boolean isStringLiteral(String s) {
+        if (s == null) return false;
+        s = s.trim();
+        return (s.startsWith("'") && s.endsWith("'")) || (s.startsWith("\"") && s.endsWith("\""));
+    }
+
+    private boolean isNumber(String s) {
+        return s != null && s.matches("-?\\d+");
+    }
+
+    /**
+     * Normaliza el contenido de un literal (quita comillas externas).
+     * Devuelve el contenido listo para .asciiz o para obtener ASCII del char.
+     */
+    private String normalizeLiteralContent(String literal) {
+        String tmp = literal.trim();
+        if ((tmp.startsWith("'") && tmp.endsWith("'")) || (tmp.startsWith("\"") && tmp.endsWith("\""))) {
+            tmp = tmp.substring(1, tmp.length()-1);
+        }
+        // escapar comillas dobles para .asciiz
+        tmp = tmp.replace("\"","\\\"");
+        return tmp;
+    }
+
+    private String getLiteralLabel(String literal) {
+        String content = normalizeLiteralContent(literal);
+        if (literalStrings.containsKey(content)) return literalStrings.get(content);
+        String lbl = "_str" + (++literalCounter);
+        literalStrings.put(content, lbl);
+        return lbl;
+    }
 
     private void preScanForLiterals() {
         for (Quadruple q : quads) {
@@ -25,170 +101,101 @@ public class MIPSCodeGenerator {
     }
 
     private void checkLiteral(String s) {
-        if (s != null && isStringLiteral(s)) {
-            getLiteralLabel(s); // asegura que se agregue a literalStrings
-        }
+        if (s != null && isStringLiteral(s)) getLiteralLabel(s);
     }
 
-    private static final Set<String> MIPS_RESERVED = new HashSet<>(Arrays.asList(
-        // Branch and jump
-        "b", "beq", "bne", "blt", "ble", "bgt", "bge",
-        "j", "jr", "jal",
-
-        // Loads and stores
-        "lw", "sw", "la", "li",
-
-        // Arithmetic instructions
-        "add", "addi", "sub", "mul", "div", "mfhi", "mflo",
-
-        // Syscall
-        "syscall"
-    ));
-
-    public MIPSCodeGenerator(IntermediateCode icode, SymbolTable symtab) {
-        this.icode = icode;
-        this.symtab = symtab;
-        this.quads = extractQuadsViaReflection(icode);
-    }
-
-    /** Genera el archivo .asm MIPS */
-    public void generate(String outPath) throws IOException {
-        out = new PrintWriter(new FileWriter(outPath));
-
-        emitHeader();
-        preScanForLiterals();  // guardar strings literales
-        emitDataSegment();      // variables + strings literales
-        emitTextSegment();      // código
-        out.close();
-    }
-
-    private void emitHeader() {
-        out.println("# CODIGO MIPS generado por MIPSCodeGenerator");
-        out.println();
-    }
-
-    private String normalizeStringLiteralForData(String s) {
-        // Quitar comillas simples si vienen: 'hola' -> hola
-        if (s.startsWith("'") && s.endsWith("'")) {
-            s = s.substring(1, s.length() - 1);
-        }
-        // Escapar comillas dobles
-        s = s.replace("\"", "\\\"");
-        return s;
-    }
-
-    /* ============================================================
-       ===============        DATA SEGMENT        ==================
-       ============================================================ */
+    /* ===================== DATA SEGMENT ===================== */
     private void emitDataSegment() {
         out.println(".data");
 
-        // 1) Recolectar nombres desde la symbol table (si existen)
-        Set<String> emitted = new LinkedHashSet<>();
+        // 1) Recolectar nombres desde symbol table (si existe)
+        Set<String> names = new LinkedHashSet<>();
         if (symtab != null && symtab.scopes != null) {
             for (Map<String, MySymbol> scope : symtab.scopes) {
-                for (MySymbol s : scope.values()) {
-                    // ignorar funciones/procedimientos como variables de datos
-                    if ("function".equalsIgnoreCase(s.getCategory()) ||
-                        "procedure".equalsIgnoreCase(s.getCategory())) continue;
-
-                    String name = safeName(s.getAddress());
-                    emitted.add(name);
+                for (MySymbol sym : scope.values()) {
+                    // ignorar funciones/procedimientos
+                    if ("function".equalsIgnoreCase(sym.getCategory()) || "procedure".equalsIgnoreCase(sym.getCategory()))
+                        continue;
+                    // evitar declarar tipos como variables
+                    if (sym.getName() != null && TYPE_NAMES.contains(sym.getName())) continue;
+                    String addr = sym.getAddress();
+                    String safe = safeNameWithCheck(addr);
+                    if (safe != null) names.add(safe);
                 }
             }
         }
 
-        // 2) Recolectar TODOS los identificadores usados en los cuádruplos
-        //    (esto asegura que temporales, locales o variables que no estén en symtab
-        //     también sean reservadas en .data)
-        Set<String> neededFromQuads = collectNamesFromQuads();
-        // unir sets (emitted contiene names from symtab, we'll ensure emitted contains quad names too)
-        emitted.addAll(neededFromQuads);
+        // 2) Recolectar identificadores desde cuádruplos (temporales, variables no en tabla, etc.)
+        names.addAll(collectNamesFromQuads());
 
-        // 3) Emitir declaraciones para cada nombre recolectado
-        //    (si el nombre es una etiqueta de string literal tipo _strX la saltamos)
-        for (String name : new LinkedHashSet<>(emitted)) {
-            if (name == null || name.isEmpty()) continue;
-            // Saltar nombres que corresponden a literales (ej: _str1) o constantes que manejamos aparte
-            if (name.startsWith("_str")) continue;
-            if (name.equals("true") || name.equals("false") || name.equals("_null")) continue;
-            // Emitir .word para variables / temporales / parámetros
-            out.printf("%s: .word 0\n", name);
+        // 3) Emitir .word para cada nombre recolectado (filtrando tipos/literales)
+        for (String n : names) {
+            if (n == null || n.isEmpty()) continue;
+            if (n.startsWith("_str")) continue;
+            if (TYPE_NAMES.contains(n)) continue;
+            if ("true".equals(n) || "false".equals(n) || "_null".equals(n)) continue;
+            out.printf("%s: .word 0\n", n);
         }
 
         out.println();
 
-        // 4) Declarar STRINGS literales
-        for (Map.Entry<String, String> e : literalStrings.entrySet()) {
-            // la clave es el texto limpio (sin comillas)
-            String lit = normalizeStringLiteralForData(e.getKey());
-            out.printf("%s: .asciiz \"%s\"\n", e.getValue(), lit);
+        // 4) Strings literales (nota: la clave del map es el contenido sin comillas)
+        for (Map.Entry<String,String> e : literalStrings.entrySet()) {
+            out.printf("%s: .asciiz \"%s\"\n", e.getValue(), e.getKey());
         }
 
         out.println();
 
-        // 5) Constantes auxiliares si no se agregaron ya
-        //    (null, true, false pueden ser referenciadas en icode)
-        //    Sólo añadir si no existen ya en emitted
-        if (!emitted.contains("_null")) {
-            out.println("_null: .word 0");
-        }
-        if (!emitted.contains("true")) {
-            out.println("true: .word 1");
-        }
-        if (!emitted.contains("false")) {
-            out.println("false: .word 0");
-        }
-
+        // 5) Constantes obligatorias
+        out.println("_null: .word 0");
+        out.println("true: .word 1");
+        out.println("false: .word 0");
         out.println();
     }
 
-    /**
-     * Recolecta identificadores (nombres) encontrados en los cuádruplos.
-     * Filtra números, literales de string y etiquetas de salto (L...).
-     * Devuelve nombres ya "safeName"d (sanitizados).
-     */
     private Set<String> collectNamesFromQuads() {
-        Set<String> names = new LinkedHashSet<>();
-        if (quads == null) return names;
-
+        Set<String> res = new LinkedHashSet<>();
         for (Quadruple q : quads) {
-            addIfIdentifier(names, q.getArg1());
-            addIfIdentifier(names, q.getArg2());
-            addIfIdentifier(names, q.getResult());
-            // algunas instrucciones usan a1 como etiqueta (LABEL) -> no queremos declarar esas L1.. como variables
+            addIfIdentifier(res, q.getArg1());
+            addIfIdentifier(res, q.getArg2());
+            addIfIdentifier(res, q.getResult());
         }
-        return names;
+        return res;
     }
 
-    private void addIfIdentifier(Set<String> names, String token) {
+    private void addIfIdentifier(Set<String> set, String token) {
         if (token == null) return;
         token = token.trim();
-        // si es número o literal string, ignorar
-        if (isNumber(token) || isStringLiteral(token)) return;
-        // si parece una etiqueta de salto Lxx (generada por GenerateLabel), ignorar
-        if (token.matches("^L\\d+$")) return;
-        // si ya es un label de literal (ej _strN) ignorar como variable
-        if (token.startsWith("_str")) return;
-        // si es operador o palabra reservada improbable, ignorar
-        if (MIPS_RESERVED.contains(token)) return;
 
-        // si viene con índice como a[3] -> extraer nombre base
+        // ignorar numeros y literales
+        if (isNumber(token) || isStringLiteral(token)) return;
+        // etiquetas Lx
+        if (token.matches("^L\\d+$")) return;
+        // si es literal label _strN
+        if (token.startsWith("_str")) return;
+        // evitar tipos
+        if (TYPE_NAMES.contains(token)) return;
+        // evitar true/false/null como variables
+        if ("true".equals(token) || "false".equals(token) || "_null".equals(token)) return;
+
+        // extraer base si viene con índice a[3]
         String base = stripIndexIfAny(token);
-        // sanitizar y agregar
-        String safe = safeName(base);
-        names.add(safe);
+        String safe = safeNameWithCheck(base);
+        if (safe != null) set.add(safe);
     }
 
-    /* ============================================================
-       =================        TEXT SEGMENT       =================
-       ============================================================ */
+    private String stripIndexIfAny(String s) {
+        if (s == null) return null;
+        int i = s.indexOf('[');
+        if (i >= 0) return s.substring(0,i);
+        return s;
+    }
+
+    /* ===================== TEXT SEGMENT ===================== */
     private void emitTextSegment() {
         out.println(".text");
         out.println(".globl main");
         out.println();
-
-        // Etiqueta principal
         out.println("main:");
 
         for (Quadruple q : quads) {
@@ -201,37 +208,38 @@ public class MIPSCodeGenerator {
         out.println("syscall");
     }
 
-    /* ============================================================
-       =================      EMIT QUADS          ==================
-       ============================================================ */
     private void emitQuad(Quadruple q) {
         String op = q.getOperator();
         String a1 = q.getArg1();
         String a2 = q.getArg2();
-        String res = q.getResult();
+        String r  = q.getResult();
 
         if (op == null) return;
 
         switch (op) {
             case "LABEL":
-                out.println(safeLabel(res != null ? res : a1) + ":");
+                out.println(safeLabel(r != null ? r : a1) + ":");
                 break;
 
             case "DECLARE":
             case "DECLARE_ARRAY":
-                out.println("# DECLARE " + res);
+                out.println("# " + op + " " + r);
                 break;
 
             case "=":
-                emitAssign(a1, res);
+                emitAssign(a1, r);
                 break;
 
-            case "<": case "<=": case ">": case ">=": case "==": case "!=":
-                emitRelational(op, a1, a2, res);
+            case "+":
+            case "-":
+            case "*":
+            case "/":
+            case "%":
+                emitArithmetic(op, a1, a2, r);
                 break;
 
-            case "+": case "-": case "*": case "/": case "%":
-                emitArithmetic(op, a1, a2, res);
+            case "<": case ">": case "<=": case ">=": case "==": case "!=":
+                emitRelational(op, a1, a2, r);
                 break;
 
             case "PRINT":
@@ -243,57 +251,67 @@ public class MIPSCodeGenerator {
                 break;
 
             case "GOTO":
-                if (res != null) {
-                    out.println("    j " + safeLabel(res));
-                }
+                if (r != null) out.println("    j " + safeLabel(r));
                 break;
 
             case "IF_FALSE":
-                // IF_FALSE cond -> label
-                if (a1 != null && res != null) {
+                if (a1 != null && r != null) {
                     loadToT0(a1);
-                    out.println("    beq $t0, $zero, " + safeLabel(res));
+                    out.println("    beq $t0, $zero, " + safeLabel(r));
                 }
                 break;
 
             case "IF_TRUE":
-                if (a1 != null && res != null) {
+                if (a1 != null && r != null) {
                     loadToT0(a1);
-                    out.println("    bne $t0, $zero, " + safeLabel(res));
+                    out.println("    bne $t0, $zero, " + safeLabel(r));
                 }
                 break;
 
             case "READ":
-                // Leer entero desde stdin y guardar en res
-                if (res != null) {
+                if (r != null) {
                     out.println("    li $v0, 5");
                     out.println("    syscall");
-                    out.printf("    sw $v0, %s\n", safeName(res));
+                    out.printf("    sw $v0, %s\n", safeNameWithCheck(r));
                 }
                 break;
 
             default:
                 out.println("# OP no soportada: " + q);
+                break;
         }
     }
 
-    /* =======================  ASIGNACIÓN ======================== */
+    /* ===================== ASIGNACIÓN ===================== */
     private void emitAssign(String src, String dest) {
         out.println("# ASSIGN " + dest + " = " + src);
 
+        String destName = safeNameWithCheck(dest);
+        if (destName == null) destName = dest; // fallback
+
         if (isNumber(src)) {
             out.printf("    li $t0, %s\n", src);
+        } else if ("true".equals(src) || "false".equals(src)) {
+            out.printf("    lw $t0, %s\n", src);
         } else if (isStringLiteral(src)) {
-            String label = getLiteralLabel(src);
-            out.printf("    la $t0, %s\n", label);     // cargar address del literal
+            String lit = normalizeLiteralContent(src);
+
+            // Si es char literal de 1 caracter → guardar ASCII, NO string pointer
+            if (lit.length() == 1) {
+                out.printf("    li $t0, %d\n", (int) lit.charAt(0));
+            } else {
+                // string → su dirección
+                out.printf("    la $t0, %s\n", getLiteralLabel(src));
+            }
         } else {
-            out.printf("    lw $t0, %s\n", safeName(src)); // cargar valor/puntero si es variable
+            // src es una variable/temporal: cargar su contenido (puede ser puntero en caso de strings)
+            out.printf("    lw $t0, %s\n", safeNameWithCheck(src));
         }
 
-        out.printf("    sw $t0, %s\n", safeName(dest));
+        out.printf("    sw $t0, %s\n", destName);
     }
 
-    /* =======================  ARITMÉTICA ======================== */
+    /* ===================== ARITMÉTICA ===================== */
     private void emitArithmetic(String op, String a1, String a2, String res) {
         out.println("# ARITH " + res + " = " + a1 + " " + op + " " + a2);
 
@@ -314,185 +332,223 @@ public class MIPSCodeGenerator {
                 break;
         }
 
-        out.printf("    sw $t2, %s\n", safeName(res));
+        out.printf("    sw $t2, %s\n", safeNameWithCheck(res));
     }
 
-    /* ======================= RELACIONES ======================== */
+    /* ===================== RELACIONAL ===================== */
     private void emitRelational(String op, String a1, String a2, String res) {
         out.println("# RELOP " + res + " = " + a1 + " " + op + " " + a2);
 
-        loadToT0(a1);
-        loadToT1(a2);
+        // Si alguno de los operandos es literal char ('A') queremos tratarlo como ASCII
+        boolean a1IsChar = isStringLiteral(a1) && normalizeLiteralContent(a1).length() == 1;
+        boolean a2IsChar = isStringLiteral(a2) && normalizeLiteralContent(a2).length() == 1;
+
+        if (a1IsChar) {
+            String lit = normalizeLiteralContent(a1);
+            out.printf("    li $t0, %d\n", (int) lit.charAt(0));
+        } else {
+            loadToT0(a1);
+        }
+
+        if (a2IsChar) {
+            String lit = normalizeLiteralContent(a2);
+            out.printf("    li $t1, %d\n", (int) lit.charAt(0));
+        } else {
+            loadToT1(a2);
+        }
 
         switch (op) {
             case "<":
-                out.println("    slt $t2, $t0, $t1");
-                break;
+                out.println("    slt $t2, $t0, $t1"); break;
             case ">":
-                out.println("    slt $t2, $t1, $t0");
-                break;
+                out.println("    slt $t2, $t1, $t0"); break;
             case "<=":
                 out.println("    slt $t2, $t1, $t0");
-                out.println("    xori $t2, $t2, 1");
-                break;
+                out.println("    xori $t2, $t2, 1"); break;
             case ">=":
                 out.println("    slt $t2, $t0, $t1");
-                out.println("    xori $t2, $t2, 1");
-                break;
+                out.println("    xori $t2, $t2, 1"); break;
             case "==":
                 out.println("    xor $t2, $t0, $t1");
-                out.println("    sltiu $t2, $t2, 1");
-                break;
+                out.println("    sltiu $t2, $t2, 1"); break;
             case "!=":
                 out.println("    xor $t2, $t0, $t1");
-                out.println("    sltu $t2, $zero, $t2");
-                break;
+                out.println("    sltu $t2, $zero, $t2"); break;
             default:
-                out.println("    li $t2, 0");
+                out.println("    li $t2, 0"); break;
         }
 
-        out.printf("    sw $t2, %s\n", safeName(res));
+        out.printf("    sw $t2, %s\n", safeNameWithCheck(res));
     }
 
-    /* =======================   PRINT   ======================== */
+    /* ===================== PRINT ===================== */
     private void emitPrint(String what) {
         out.println("# PRINT " + what);
 
+        // 1) literal string
         if (isStringLiteral(what)) {
-            String lbl = getLiteralLabel(what);
-            out.printf("    la $a0, %s\n", lbl);
-            out.println("    li $v0, 4");
-        } else if (isNumber(what)) {
-            out.printf("    li $a0, %s\n", what);
-            out.println("    li $v0, 1");
-        } else {
-            // Intentar resolver el tipo desde la tabla de símbolos para
-            // distinguir entre números y cadenas almacenadas en memoria.
-            MySymbol s = symtab != null ? symtab.getSymbol(stripIndexIfAny(what)) : null;
-            if (s != null && s.getType() != null) {
-                String t = s.getType().toLowerCase();
-                if (t.contains("string") || t.contains("char")) {
-                    // variable que guarda puntero a string -> cargar puntero y syscall 4
-                    out.printf("    lw $a0, %s\n", safeName(what));
-                    out.println("    li $v0, 4");
-                } else {
-                    out.printf("    lw $a0, %s\n", safeName(what));
-                    out.println("    li $v0, 1");
-                }
+            String content = normalizeLiteralContent(what);
+            // Si es char literal de longitud 1 -> imprimir como caracter (syscall 11)
+            if (content.length() == 1) {
+                out.printf("    li $a0, %d\n", (int) content.charAt(0));
+                out.println("    li $v0, 11");
+                out.println("    syscall");
+                return;
             } else {
-                // si no sabemos, asumimos entero
-                out.printf("    lw $a0, %s\n", safeName(what));
-                out.println("    li $v0, 1");
+                out.printf("    la $a0, %s\n", getLiteralLabel(what));
+                out.println("    li $v0, 4");
+                out.println("    syscall");
+                return;
             }
         }
 
+        // 2) boolean literal
+        if ("true".equals(what) || "false".equals(what)) {
+            out.printf("    lw $a0, %s\n", what);
+            out.println("    li $v0, 1");
+            out.println("    syscall");
+            return;
+        }
+
+        // 3) numeric literal
+        if (isNumber(what)) {
+            out.printf("    li $a0, %s\n", what);
+            out.println("    li $v0, 1");
+            out.println("    syscall");
+            return;
+        }
+
+        // 4) variable/temporal: decidir según tipo en symbol table
+        MySymbol s = (symtab != null) ? symtab.getSymbol(stripIndexIfAny(what)) : null;
+        if (s != null && s.getType() != null) {
+            String t = s.getType().toLowerCase();
+            if (t.contains("string")) {
+                // variable que guarda puntero a string -> cargar puntero y syscall 4
+                out.printf("    lw $a0, %s\n", safeNameWithCheck(what));
+                out.println("    li $v0, 4");
+                out.println("    syscall");
+                return;
+            } else if (t.contains("char")) {
+                // char almacenado como ASCII entero -> cargar y syscall 11
+                out.printf("    lw $a0, %s\n", safeNameWithCheck(what));
+                out.println("    li $v0, 11");
+                out.println("    syscall");
+                return;
+            } else {
+                // entero / float -> imprimir como número (syscall 1)
+                out.printf("    lw $a0, %s\n", safeNameWithCheck(what));
+                out.println("    li $v0, 1");
+                out.println("    syscall");
+                return;
+            }
+        }
+
+        // 5) fallback: asumir entero
+        out.printf("    lw $a0, %s\n", safeNameWithCheck(what));
+        out.println("    li $v0, 1");
         out.println("    syscall");
     }
 
-    /* =======================  RETURN  ======================== */
+    /* ===================== RETURN ===================== */
     private void emitReturn(String val) {
         out.println("# RETURN " + val);
-
         if (val != null) {
             if (isNumber(val)) out.printf("    li $v0, %s\n", val);
-            else out.printf("    lw $v0, %s\n", safeName(val));
+            else out.printf("    lw $v0, %s\n", safeNameWithCheck(val));
         }
-
         out.println("    jr $ra");
     }
 
-    /* ============================================================
-       =================        HELPERS         ====================
-       ============================================================ */
-
+    /* ===================== CARGAS ===================== */
     private void loadToT0(String src) {
-        if (src == null) {
-            out.println("    li $t0, 0");
-            return;
+        if (src == null) { out.println("    li $t0, 0"); return; }
+        if (isNumber(src)) { out.printf("    li $t0, %s\n", src); return; }
+        if ("true".equals(src) || "false".equals(src)) { out.printf("    lw $t0, %s\n", src); return; }
+        if (isStringLiteral(src)) {
+            String lit = normalizeLiteralContent(src);
+            if (lit.length() == 1) {
+                out.printf("    li $t0, %d\n", (int) lit.charAt(0));
+                return;
+            } else {
+                out.printf("    la $t0, %s\n", getLiteralLabel(src));
+                return;
+            }
         }
-        if (isNumber(src)) {
-            out.printf("    li $t0, %s\n", src);
-        } else if (isStringLiteral(src)) {
-            out.printf("    la $t0, %s\n", getLiteralLabel(src));
-        } else {
-            out.printf("    lw $t0, %s\n", safeName(src));
-        }
+        out.printf("    lw $t0, %s\n", safeNameWithCheck(src));
     }
 
     private void loadToT1(String src) {
-        if (src == null) {
-            out.println("    li $t1, 0");
-            return;
+        if (src == null) { out.println("    li $t1, 0"); return; }
+        if (isNumber(src)) { out.printf("    li $t1, %s\n", src); return; }
+        if ("true".equals(src) || "false".equals(src)) { out.printf("    lw $t1, %s\n", src); return; }
+        if (isStringLiteral(src)) {
+            String lit = normalizeLiteralContent(src);
+            if (lit.length() == 1) {
+                // <-- CORRECCIÓN: usar $t1 (no $t0)
+                out.printf("    li $t1, %d\n", (int) lit.charAt(0));
+                return;
+            } else {
+                out.printf("    la $t1, %s\n", getLiteralLabel(src));
+                return;
+            }
         }
-        if (isNumber(src)) {
-            out.printf("    li $t1, %s\n", src);
-        } else if (isStringLiteral(src)) {
-            out.printf("    la $t1, %s\n", getLiteralLabel(src));
-        } else {
-            out.printf("    lw $t1, %s\n", safeName(src));
-        }
+        out.printf("    lw $t1, %s\n", safeNameWithCheck(src));
     }
 
-    private boolean isNumber(String s) {
-        return s != null && s.matches("-?\\d+");
-    }
-
-    private boolean isStringLiteral(String s) {
-        if (s == null) return false;
-        s = s.trim();
-        return (s.startsWith("'") && s.endsWith("'"))
-            || (s.startsWith("\"") && s.endsWith("\""));
-    }
-
-    private String getLiteralLabel(String literal) {
-        String clean = literal.trim();
-
-        if ((clean.startsWith("'") && clean.endsWith("'")) ||
-            (clean.startsWith("\"") && clean.endsWith("\""))) {
-            clean = clean.substring(1, clean.length() - 1); // quita comillas
-        }
-
-        if (literalStrings.containsKey(clean)) return literalStrings.get(clean);
-
-        String label = "_str" + (++literalCounter);
-        literalStrings.put(clean, label);
-
-        return label;
-    }
-
-    private String safeName(String id) {
+    /* ===================== NOMBRES SEGUROS ===================== */
+    /**
+     * Devuelve un nombre "safe" para usar en .data/text.
+     * Si la symbol table contiene el identificador con ese nombre EXACTO,
+     * devuelve el mismo nombre (para no romper la relación).
+     * Si es un tipo, devuelve null (no declarar).
+     * Si coincide con instrucción MIPS, le añade prefijo.
+     */
+    private String safeNameWithCheck(String id) {
         if (id == null) return "_null";
+        id = id.trim();
+        // si coincidia exactamente con true/false/_null o literal label -> devolver tal cual
+        if ("true".equals(id) || "false".equals(id) || "_null".equals(id)) return id;
+        if (id.startsWith("_str")) return id;
 
-        // Reemplazar caracteres invalidos
-        String clean = id.replaceAll("[^a-zA-Z0-9_]", "_");
+        // evitar declarar tipos
+        if (TYPE_NAMES.contains(id)) return null;
 
-        // Si coincide con una instrucción MIPS, agregar prefijo seguro
-        if (MIPS_RESERVED.contains(clean)) {
-            clean = "_v_" + clean;
-        }
+        // si la symbol table contiene exactamente el símbolo con ese nombre -> devolverlo tal cual
+        if (symtab != null && symtab.getSymbol(id) != null) return id;
 
-        // Si comienza con un número, agregar prefijo también
-        if (clean.matches("^[0-9].*")) {
-            clean = "_v_" + clean;
-        }
+        // limpiar caracteres no válidos
+        String clean = id.replaceAll("[^A-Za-z0-9_]", "_");
+
+        // si el limpio coincide con instrucción MIPS -> prefix
+        if (MIPS_RESERVED.contains(clean)) clean = "_v_" + clean;
+
+        // si empieza con número -> prefix
+        if (clean.matches("^[0-9].*")) clean = "_v_" + clean;
 
         return clean;
     }
 
     private String safeLabel(String lbl) {
         if (lbl == null) return "_L_null";
-        return lbl.replaceAll("[^a-zA-Z0-9_]", "_");
+        return lbl.replaceAll("[^A-Za-z0-9_]", "_");
     }
 
-    private String stripIndexIfAny(String s) {
-        if (s == null) return null;
-        int idx = s.indexOf('[');
-        if (idx >= 0) return s.substring(0, idx);
-        return s;
-    }
-
+    /* ===================== UTIL: obtener quads ===================== */
+    // Intenta usar icode.getCode(); si no existe hace reflection al campo "code"
     @SuppressWarnings("unchecked")
-    private List<Quadruple> extractQuadsViaReflection(IntermediateCode ic) {
+    private List<Quadruple> obtainQuads(IntermediateCode ic) {
+        if (ic == null) return new ArrayList<>();
+        try {
+            // intentar método público getCode()
+            Method m = ic.getClass().getMethod("getCode");
+            Object r = m.invoke(ic);
+            if (r instanceof List) return (List<Quadruple>) r;
+        } catch (NoSuchMethodException ignored) {
+            // fallback por reflection al campo "code"
+        } catch (Exception e) {
+            // si falla, continuamos a reflection fallback
+        }
+        // reflection fallback (existía en tu versión anterior)
         try {
             Field f = ic.getClass().getDeclaredField("code");
             f.setAccessible(true);

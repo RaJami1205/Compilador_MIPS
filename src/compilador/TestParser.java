@@ -79,6 +79,8 @@ public class TestParser {
 
             if (!huboErrores) {
                 Parser.codigoIntermedio.printCode();
+                String ruta = "src/Codigo_Intermedio/codigo_intermedio.txt"; 
+                Parser.codigoIntermedio.exportToFile(ruta);
             }
 
 

@@ -9,10 +9,3 @@ procedure principalєэ ¿
     let int resultado = c + d$
     outputєresultadoэ$
 ? 
-
-int suma єэ  ¿
-    let int c = 5$
-    let int d = 10$
-    let int resultado = c + d$
-    return resultado$
-?
